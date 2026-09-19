@@ -13,5 +13,8 @@ venv/
 # Model cache (sentence-transformers downloads here)
 .cache/
 
+# Backend output from the scheduled start script
+logs/
+
 # OS
 .DS_Store

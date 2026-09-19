@@ -171,6 +171,40 @@ bugs from Zoho. Click the header to collapse without closing.
 > origins. This server holds your Zoho tokens on localhost, so `allow_origins=["*"]`
 > would let any page you visit read your bug data — don't widen it.
 
+## Optional — run the backend on a schedule (Windows)
+
+The extension needs the backend up. Two scheduled tasks can handle that for a
+normal working week:
+
+```powershell
+# start weekdays 10:00, stop weekdays 19:00
+Register-ScheduledTask -TaskName "DuplicateBugChecker-Start" ...
+Register-ScheduledTask -TaskName "DuplicateBugChecker-Stop"  ...
+```
+
+Both call the scripts in `scripts/`, which you can also run by hand whenever
+you work outside those hours:
+
+```powershell
+.\scripts\start-backend.ps1     # safe to run twice — no-ops if already up
+.\scripts\stop-backend.ps1
+```
+
+Notes:
+
+- The tasks run **as you, only when logged on** — the backend reads your `.env`,
+  so it must not run as SYSTEM.
+- `StartWhenAvailable` means a machine that was asleep at 10:00 starts the
+  backend when you next log in, rather than skipping the day.
+- Battery operation is explicitly allowed; Windows otherwise skips tasks on an
+  unplugged laptop.
+- Output goes to `logs/backend.out.log` and `logs/backend.err.log` (git-ignored),
+  which is where to look when an unattended start fails.
+- `python.exe` with a hidden window, **not** `pythonw.exe` — under pythonw
+  `sys.stdout` is None and uvicorn's logger crashes on startup.
+- Remove with:
+  `Unregister-ScheduledTask -TaskName "DuplicateBugChecker-Start","DuplicateBugChecker-Stop"`
+
 ---
 
 ## How the detection works
