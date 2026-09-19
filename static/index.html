@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duplicate Bug Checker</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      max-width: 760px; margin: 40px auto; padding: 0 16px; line-height: 1.5;
+    }
+    h1 { font-size: 1.4rem; }
+    label { display: block; margin-top: 14px; font-weight: 600; font-size: .9rem; }
+    input, textarea {
+      width: 100%; padding: 10px; margin-top: 6px; border: 1px solid #8884;
+      border-radius: 8px; font: inherit; box-sizing: border-box; background: transparent;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    .row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+    button {
+      padding: 10px 16px; border: 0; border-radius: 8px; font: inherit;
+      font-weight: 600; cursor: pointer; background: #2563eb; color: #fff;
+    }
+    button.secondary { background: #6b7280; }
+    button:disabled { opacity: .6; cursor: default; }
+    .card { border: 1px solid #8884; border-radius: 10px; padding: 12px 14px; margin-top: 12px; }
+    .verdict { font-weight: 700; }
+    .likely { color: #dc2626; }
+    .possible { color: #d97706; }
+    .different { color: #16a34a; }
+    .bars { font-size: .82rem; color: #8a8a8a; margin-top: 4px; }
+    #status { margin-top: 14px; font-size: .9rem; color: #8a8a8a; }
+    .banner { background: #16a34a22; border: 1px solid #16a34a55; }
+  </style>
+</head>
+<body>
+  <h1>Duplicate Bug Checker</h1>
+  <p>Type a bug you're about to file. It checks against your synced Zoho bugs
+     and warns if it looks like a duplicate.</p>
+
+  <div class="row">
+    <button id="syncBtn" class="secondary" onclick="runSync()">Sync bugs from Zoho</button>
+  </div>
+
+  <label for="title">Bug title</label>
+  <input id="title" placeholder="e.g. Login page blank after SSO redirect" />
+
+  <label for="desc">Description (optional)</label>
+  <textarea id="desc" placeholder="Steps, environment, what happens..."></textarea>
+
+  <div class="row">
+    <button id="checkBtn" onclick="runCheck()">Check for duplicates</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="results"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(msg) { $("status").textContent = msg; }
+
+    async function runSync() {
+      $("syncBtn").disabled = true;
+      setStatus("Syncing from Zoho... (first run downloads the AI model, be patient)");
+      try {
+        const res = await fetch("/api/sync", { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Sync failed");
+        setStatus(`Synced ${data.synced} bugs.`);
+      } catch (err) {
+        setStatus("Sync error: " + err.message);
+      } finally {
+        $("syncBtn").disabled = false;
+      }
+    }
+
+    async function runCheck() {
+      const title = $("title").value.trim();
+      if (!title) { setStatus("Enter a bug title first."); return; }
+
+      $("checkBtn").disabled = true;
+      setStatus("Checking...");
+      $("results").innerHTML = "";
+      try {
+        const res = await fetch("/api/check-duplicate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description: $("desc").value.trim() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Check failed");
+        render(data);
+      } catch (err) {
+        setStatus("Check error: " + err.message);
+      } finally {
+        $("checkBtn").disabled = false;
+      }
+    }
+
+    function render(data) {
+      if (!data.matches.length) {
+        setStatus("No similar bugs found — looks new.");
+        return;
+      }
+      setStatus(
+        data.is_duplicate
+          ? "⚠ This looks like a possible duplicate. Review the matches below."
+          : "No strong duplicate, but here are the closest bugs:"
+      );
+
+      const box = $("results");
+      if (data.is_duplicate) box.innerHTML = '<div class="card banner">Possible duplicate detected.</div>';
+
+      for (const m of data.matches) {
+        const cls = m.verdict.includes("likely") ? "likely"
+                  : m.verdict.includes("possible") ? "possible" : "different";
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML =
+          `<div class="verdict ${cls}">${m.verdict} — ${(m.final_score * 100).toFixed(0)}% match</div>` +
+          `<div><strong>#${m.zoho_issue_id}</strong> ${escapeHtml(m.title)}</div>` +
+          `<div class="bars">status: ${m.status ?? "—"} · severity: ${m.severity ?? "—"} · ` +
+          `meaning ${(m.semantic_score * 100).toFixed(0)}% · words ${(m.keyword_score * 100).toFixed(0)}%</div>`;
+        box.appendChild(div);
+      }
+    }
+
+    function escapeHtml(s) {
+      return (s || "").replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Web framework + server
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# Postgres driver (psycopg 3) + connection pool + pgvector adapter
+psycopg[binary]==3.2.1
+psycopg-pool==3.2.2
+pgvector==0.3.3
+
+# Embeddings model (pulls in torch — large download, see README)
+sentence-transformers==3.0.1
+
+# HTTP client for calling the Zoho Projects API
+httpx==0.27.2
+
+# Settings / config loading from .env
+pydantic-settings==2.4.0
+python-dotenv==1.0.1

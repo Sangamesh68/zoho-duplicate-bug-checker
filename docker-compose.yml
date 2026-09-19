@@ -1,0 +1,28 @@
+# Local Postgres with the pgvector extension already built in.
+# Start it with:  docker compose up -d
+# Stop it with:   docker compose down       (data is kept)
+# Wipe it with:   docker compose down -v     (data is deleted)
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: dupchecker-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dupchecker
+      POSTGRES_PASSWORD: dupchecker
+      POSTGRES_DB: dupchecker
+    ports:
+      - "5432:5432"
+    volumes:
+      - dupchecker_pgdata:/var/lib/postgresql/data
+      # schema.sql runs automatically the FIRST time the container is created
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dupchecker -d dupchecker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dupchecker_pgdata:

@@ -1,0 +1,14 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Model cache (sentence-transformers downloads here)
+.cache/
+
+# OS
+.DS_Store

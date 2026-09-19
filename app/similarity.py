@@ -1,0 +1,109 @@
+"""
+The duplicate detector.
+
+It combines two signals:
+  1. SEMANTIC  — does the new bug MEAN the same as an existing one?
+                 (pgvector cosine similarity over embeddings)
+  2. KEYWORD   — does it use the same WORDS?
+                 (Postgres full-text ts_rank_cd — the "BM25-style" half)
+
+We retrieve the semantically-closest candidates for THIS user, then blend the
+two scores. Every query is scoped by user_id, so a tester only ever matches
+against their own bugs.
+
+Note: ts_rank_cd is Postgres's built-in text ranking, not literally BM25. It
+plays the same role well here; if you later want true BM25 you can swap this
+one query without touching anything else.
+"""
+from app.db import get_conn
+from app.embeddings import embed
+from app.config import settings
+
+
+def find_duplicates(
+    user_id: str,
+    title: str,
+    description: str = "",
+    project_id: str | None = None,
+    top_k: int = 5,
+) -> dict:
+    """
+    Return the most likely duplicate bugs for a proposed new bug.
+    """
+    query_text = f"{title} {description}".strip()
+    query_embedding = embed(query_text)
+
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                zoho_issue_id,
+                title,
+                description,
+                status,
+                severity,
+                1 - (embedding <=> %(emb)s) AS semantic_score,
+                ts_rank_cd(
+                    to_tsvector('english', title || ' ' || coalesce(description, '')),
+                    plainto_tsquery('english', %(qtext)s)
+                ) AS keyword_score
+            FROM bugs
+            WHERE user_id = %(uid)s
+              AND (%(pid)s IS NULL OR zoho_project_id = %(pid)s)
+            ORDER BY embedding <=> %(emb)s          -- nearest by meaning first
+            LIMIT 20
+            """,
+            {
+                "emb": query_embedding,
+                "qtext": query_text,
+                "uid": user_id,
+                "pid": project_id,
+            },
+        )
+        candidates = cur.fetchall()
+
+    if not candidates:
+        return {"is_duplicate": False, "matches": []}
+
+    # Normalize keyword scores to 0..1 (ts_rank_cd is unbounded) so the two
+    # signals are on the same scale before we blend them.
+    max_kw = max((c["keyword_score"] or 0.0) for c in candidates) or 1.0
+
+    matches = []
+    for c in candidates:
+        semantic = float(c["semantic_score"] or 0.0)
+        keyword = float(c["keyword_score"] or 0.0) / max_kw
+        final = (
+            settings.semantic_weight * semantic
+            + settings.keyword_weight * keyword
+        )
+        matches.append(
+            {
+                "zoho_issue_id": c["zoho_issue_id"],
+                "title": c["title"],
+                "status": c["status"],
+                "severity": c["severity"],
+                "semantic_score": round(semantic, 3),
+                "keyword_score": round(keyword, 3),
+                "final_score": round(final, 3),
+                "verdict": _verdict(final, semantic),
+            }
+        )
+
+    # Best matches first.
+    matches.sort(key=lambda m: m["final_score"], reverse=True)
+    matches = matches[:top_k]
+
+    is_duplicate = any(
+        m["final_score"] >= settings.duplicate_threshold for m in matches
+    )
+    return {"is_duplicate": is_duplicate, "matches": matches}
+
+
+def _verdict(final: float, semantic: float) -> str:
+    """Human-readable label for a single match."""
+    if final >= settings.duplicate_threshold or semantic >= 0.85:
+        return "likely duplicate"
+    if final >= settings.duplicate_threshold - 0.15:
+        return "possible duplicate"
+    return "probably different"
