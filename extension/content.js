@@ -31,9 +31,12 @@
     return;
   }
 
-  // Search boxes and filters are text inputs too — don't treat them as titles.
-  const TITLE_HINT = /(bug|issue)?\s*(title|summary|subject|name)/i;
-  const NOT_TITLE_HINT = /(search|filter|comment|tag|url|link|email)/i;
+  // Only a real title field counts. "name" used to be accepted here, but Zoho
+  // puts name= on search and filter boxes throughout the app, which made the
+  // panel appear on list views that have nothing to do with filing a bug.
+  const TITLE_HINT = /\b(title|summary|subject)\b/i;
+  const NOT_TITLE_HINT =
+    /(search|filter|comment|tag|url|link|email|group|sort|view|column|assign)/i;
 
   let lastQuery = "";
   let debounceTimer = null;
@@ -131,6 +134,33 @@
       .join(" ");
   }
 
+  /**
+   * Is this field part of an open create/edit issue form?
+   *
+   * A title field on its own isn't enough — the panel should appear only with
+   * the New Issues form, not on a list view that happens to contain a matching
+   * input. The reliable tell is the form's own buttons, so walk up a few levels
+   * looking for a container that holds both the field and a Cancel + Add/Save
+   * pair.
+   */
+  function isInCreateForm(field) {
+    let node = field.parentElement;
+    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+      const buttons = node.querySelectorAll(
+        'button, input[type="button"], input[type="submit"], [role="button"]'
+      );
+      let hasCancel = false;
+      let hasSubmit = false;
+      for (const b of buttons) {
+        const label = (b.textContent || b.value || "").trim().toLowerCase();
+        if (label === "cancel") hasCancel = true;
+        if (label === "add" || label === "save" || label === "create") hasSubmit = true;
+      }
+      if (hasCancel && hasSubmit) return true;
+    }
+    return false;
+  }
+
   function findTitleField() {
     const fields = document.querySelectorAll(
       'input[type="text"]:not([disabled]), input:not([type]), textarea'
@@ -139,7 +169,9 @@
       if (!isVisible(el)) continue;
       const hints = fieldHints(el);
       if (NOT_TITLE_HINT.test(hints)) continue;
-      if (TITLE_HINT.test(hints)) return el;
+      if (!TITLE_HINT.test(hints)) continue;
+      if (!isInCreateForm(el)) continue;
+      return el;
     }
     return null;
   }
@@ -335,11 +367,14 @@
     field.addEventListener("input", onInput);
     log("watching title field", field.id || field.name || field.placeholder || "(unnamed)");
 
-    // Reopening a form that already has a title (an edit, or a restored draft)
-    // should show results straight away rather than waiting for a keystroke.
+    // The form being open is what makes the panel relevant, so show it now
+    // rather than waiting for a keystroke — it is part of the create window.
+    showPanel();
+
     if (field.value && field.value.trim()) {
-      showPanel();
-      check(field.value);
+      check(field.value); // reopened form or restored draft
+    } else {
+      setStatus("Waiting for a title…");
     }
   }
 
