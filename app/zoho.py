@@ -123,7 +123,13 @@ def fetch_all_bugs(access_token: str, portal_id: str, project_id: str) -> list[d
             resp = client.get(
                 url,
                 headers=_headers(access_token),
-                params={"page": page, "per_page": per_page},
+                # is_desc_needed is mandatory on v3 (400 LESS_THAN_MIN_OCCURANCE
+                # without it) and we need descriptions for the embeddings.
+                params={
+                    "page": page,
+                    "per_page": per_page,
+                    "is_desc_needed": "true",
+                },
             )
             _raise_for_status(resp)
             data = resp.json()
@@ -185,10 +191,12 @@ def normalize_bug(raw: dict) -> dict:
                 return raw[k]
         return default
 
-    # status/severity can be nested objects in v3 ({"name": "..."}) or strings.
+    # status/severity come back as objects in v3 — {"id": .., "type": "Open"} —
+    # where the human-readable label lives under "type". Older shapes used
+    # "name"/"value", and plain strings are still possible.
     def name_of(value):
         if isinstance(value, dict):
-            return value.get("name") or value.get("value")
+            return value.get("type") or value.get("name") or value.get("value")
         return value
 
     return {

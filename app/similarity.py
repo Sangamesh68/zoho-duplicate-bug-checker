@@ -49,7 +49,9 @@ def find_duplicates(
                 ) AS keyword_score
             FROM bugs
             WHERE user_id = %(uid)s
-              AND (%(pid)s IS NULL OR zoho_project_id = %(pid)s)
+              -- cast needed: a bare NULL parameter leaves Postgres unable to
+              -- infer the type, which errors with AmbiguousParameter
+              AND (%(pid)s::text IS NULL OR zoho_project_id = %(pid)s::text)
             ORDER BY embedding <=> %(emb)s          -- nearest by meaning first
             LIMIT 20
             """,
@@ -67,16 +69,26 @@ def find_duplicates(
 
     # Normalize keyword scores to 0..1 (ts_rank_cd is unbounded) so the two
     # signals are on the same scale before we blend them.
-    max_kw = max((c["keyword_score"] or 0.0) for c in candidates) or 1.0
+    max_kw = max((c["keyword_score"] or 0.0) for c in candidates)
+
+    # A reworded duplicate shares no words, so every keyword score can be 0.
+    # Blending then caps the final score at SEMANTIC_WEIGHT (0.65) — below the
+    # 0.72 threshold no matter how perfect the semantic match. When there is no
+    # keyword signal at all, score on meaning alone instead of silently making
+    # the threshold unreachable.
+    keyword_signal = max_kw > 0
 
     matches = []
     for c in candidates:
         semantic = float(c["semantic_score"] or 0.0)
-        keyword = float(c["keyword_score"] or 0.0) / max_kw
-        final = (
-            settings.semantic_weight * semantic
-            + settings.keyword_weight * keyword
-        )
+        keyword = float(c["keyword_score"] or 0.0) / max_kw if keyword_signal else 0.0
+        if keyword_signal:
+            final = (
+                settings.semantic_weight * semantic
+                + settings.keyword_weight * keyword
+            )
+        else:
+            final = semantic
         matches.append(
             {
                 "zoho_issue_id": c["zoho_issue_id"],
@@ -94,9 +106,10 @@ def find_duplicates(
     matches.sort(key=lambda m: m["final_score"], reverse=True)
     matches = matches[:top_k]
 
-    is_duplicate = any(
-        m["final_score"] >= settings.duplicate_threshold for m in matches
-    )
+    # Keep this in step with _verdict: a match labelled "likely duplicate" via
+    # the high-semantic escape hatch must also set the top-level flag, or the
+    # UI shows a duplicate warning next to is_duplicate = false.
+    is_duplicate = any(m["verdict"] == "likely duplicate" for m in matches)
     return {"is_duplicate": is_duplicate, "matches": matches}
 
 
