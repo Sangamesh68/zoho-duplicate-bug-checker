@@ -18,9 +18,16 @@ class Settings(BaseSettings):
     # zoho_api_base — if one is .in the other must be too.
     zoho_accounts_base: str = "https://accounts.zoho.in"
 
+    # Self Client app credentials, used only by get_token.py to swap a
+    # grant code for an access token.
+    zoho_client_id: str = ""
+    zoho_client_secret: str = ""
+    zoho_grant_code: str = ""
+
     # Local single-user seed values (Self Client mode)
     local_user_email: str = "you@arcitech.ai"
     zoho_access_token: str = ""
+    zoho_refresh_token: str = ""
     zoho_portal_id: str = ""
     zoho_project_id: str = ""
 

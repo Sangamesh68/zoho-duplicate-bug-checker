@@ -57,8 +57,22 @@ needed yet).
    pick a duration, and generate a code.
    The last two scopes are what let the app read **who you are** (your ZUID and
    your portal member id) — without them `seed.py` stops with a 403.
-4. Exchange that code for an **access token** (the console shows how, or use the
-   token/refresh call). Copy the **access token**.
+4. Copy the **client id** and **client secret** from the Client Secret tab into
+   `.env` as `ZOHO_CLIENT_ID` / `ZOHO_CLIENT_SECRET`, put the code from step 3
+   into `ZOHO_GRANT_CODE`, then run:
+
+   ```bash
+   python get_token.py
+   ```
+
+   That exchanges the code and writes `ZOHO_ACCESS_TOKEN` into `.env` for you.
+
+> ⚠ **The grant code is not the access token.** They look identical
+> (`1000.<32 hex>.<32 hex>`), so pasting the code straight into
+> `ZOHO_ACCESS_TOKEN` is an easy mistake — and it fails with a misleading
+> `401 INVALID_OAUTHTOKEN` rather than anything mentioning the code. Grant
+> codes are also single-use and expire in minutes, so generate the code and
+> run `get_token.py` back to back.
 
 > Self Client access tokens are short-lived (about an hour). For local dev
 > that's fine — regenerate when it expires. The hosted OAuth version (later)
@@ -140,6 +154,7 @@ duplicate-bug-checker/
 ├── schema.sql            # tables (all scoped by user_id)
 ├── requirements.txt
 ├── .env.example          # copy to .env
+├── get_token.py          # grant code -> access token, written to .env
 ├── discover_ids.py       # find portal/project IDs
 ├── seed.py               # create the local user (local stand-in for OAuth)
 ├── static/index.html     # test UI (no Chrome extension needed yet)
