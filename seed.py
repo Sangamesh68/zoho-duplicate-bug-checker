@@ -81,21 +81,26 @@ def main():
 
         user_id = row["id"]
 
-        # Store / refresh this user's Zoho connection.
+        # Store / refresh this user's Zoho connection. The refresh token is
+        # what lets sync renew an expired access token on its own, so keep any
+        # previously stored one rather than overwriting it with NULL.
         cur.execute(
             """
             INSERT INTO zoho_credentials
                 (user_id, access_token, refresh_token, portal_id, project_id, updated_at)
-            VALUES (%s, %s, NULL, %s, %s, now())
+            VALUES (%s, %s, %s, %s, %s, now())
             ON CONFLICT (user_id) DO UPDATE SET
-                access_token = EXCLUDED.access_token,
-                portal_id    = EXCLUDED.portal_id,
-                project_id   = EXCLUDED.project_id,
-                updated_at   = now()
+                access_token  = EXCLUDED.access_token,
+                refresh_token = COALESCE(EXCLUDED.refresh_token,
+                                         zoho_credentials.refresh_token),
+                portal_id     = EXCLUDED.portal_id,
+                project_id    = EXCLUDED.project_id,
+                updated_at    = now()
             """,
             (
                 user_id,
                 settings.zoho_access_token,
+                settings.zoho_refresh_token or None,
                 settings.zoho_portal_id,
                 settings.zoho_project_id,
             ),

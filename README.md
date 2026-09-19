@@ -74,9 +74,13 @@ needed yet).
 > codes are also single-use and expire in minutes, so generate the code and
 > run `get_token.py` back to back.
 
-> Self Client access tokens are short-lived (about an hour). For local dev
-> that's fine — regenerate when it expires. The hosted OAuth version (later)
-> handles refresh automatically.
+> **You only ever need one grant code.** Access tokens last about an hour, but
+> `get_token.py` also stores a **refresh token**, which does not expire. When a
+> sync hits a 401, it exchanges the refresh token for a new access token and
+> retries — no trip back to the API console.
+>
+> You need a new grant code only if you change the scopes, revoke the token, or
+> delete the Self Client.
 
 ## Step 4 — Set up your .env
 
@@ -187,8 +191,10 @@ rewritten:
 
 ## Troubleshooting
 
-- **401 on sync** → token expired (regenerate) or wrong region in
-  `ZOHO_API_BASE` (`.in` vs `.com`).
+- **401 on sync** → sync refreshes expired tokens by itself, so a 401 that
+  reaches you means the refresh token is missing or revoked. Check
+  `ZOHO_CLIENT_ID` / `ZOHO_CLIENT_SECRET` are set, then re-run `get_token.py`
+  with a new grant code followed by `seed.py`. Also check the region.
 - **403 on seed** → token is missing `AaaServer.profile.READ` /
   `ZohoProjects.users.READ`; regenerate it with those scopes.
 - **`column "zoho_user_id" does not exist`** → your DB predates that column.

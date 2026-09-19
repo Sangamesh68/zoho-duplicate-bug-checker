@@ -14,7 +14,16 @@ from app.config import settings
 
 
 class ZohoError(Exception):
-    """Raised when Zoho returns an error we can't recover from."""
+    """
+    Raised when Zoho returns an error we can't recover from.
+
+    status_code is kept so callers can react to specific failures — sync
+    refreshes the token on a 401 rather than giving up.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _headers(access_token: str) -> dict:
@@ -70,6 +79,43 @@ def get_user_info(access_token: str) -> dict:
         resp = client.get(url, headers=_headers(access_token))
     _raise_for_status(resp)
     return resp.json()
+
+
+def refresh_access_token(refresh_token: str) -> dict:
+    """
+    Trade a refresh token for a new access token.
+
+    Refresh tokens don't expire, so this is what removes the hourly trip to the
+    API console — the grant code is needed only once, ever. Returns
+    {"access_token": str, "expires_in": int}.
+    """
+    if not settings.zoho_client_id or not settings.zoho_client_secret:
+        raise ZohoError(
+            "Cannot refresh: ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET are not set "
+            "in .env. They are required to exchange a refresh token."
+        )
+
+    url = f"{settings.zoho_accounts_base}/oauth/v2/token"
+    with httpx.Client(timeout=30) as client:
+        resp = client.post(
+            url,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": settings.zoho_client_id,
+                "client_secret": settings.zoho_client_secret,
+            },
+        )
+
+    # The accounts server answers 200 even on failure, with an "error" key.
+    payload = resp.json() if resp.content else {}
+    if "access_token" not in payload:
+        raise ZohoError(
+            f"Refresh failed: {payload.get('error', payload)}. The refresh "
+            "token may have been revoked — re-run get_token.py with a new "
+            "grant code."
+        )
+    return payload
 
 
 def list_portal_users(access_token: str, portal_id: str) -> list[dict]:
@@ -160,24 +206,32 @@ def _raise_for_status(resp: httpx.Response) -> None:
         return
     if resp.status_code == 401:
         raise ZohoError(
-            "401 Unauthorized — token is expired or invalid. In Self Client "
-            "mode, generate a fresh token. Also check ZOHO_API_BASE matches "
-            "your account region (.in vs .com)."
+            "401 Unauthorized — access token expired or invalid. Sync refreshes "
+            "automatically when a refresh token is stored; if you see this, the "
+            "refresh token is missing or was revoked. Re-run get_token.py with a "
+            "fresh grant code. Also check the region (.in vs .com).",
+            401,
         )
     if resp.status_code == 403:
         raise ZohoError(
             "403 Forbidden — the token is valid but missing a scope. Identity "
             "lookups need AaaServer.profile.READ and ZohoProjects.users.READ; "
-            "regenerate the Self Client token with those included."
+            "regenerate the Self Client token with those included.",
+            403,
         )
     if resp.status_code == 404:
         raise ZohoError(
             "404 Not Found — check ZOHO_PORTAL_ID / ZOHO_PROJECT_ID, and that "
-            "ZOHO_API_BASE region (.in vs .com) is correct."
+            "ZOHO_API_BASE region (.in vs .com) is correct.",
+            404,
         )
     if resp.status_code == 429:
-        raise ZohoError("429 Rate limited by Zoho — wait ~10 minutes and retry.")
-    raise ZohoError(f"Zoho API error {resp.status_code}: {resp.text[:300]}")
+        raise ZohoError(
+            "429 Rate limited by Zoho — wait ~10 minutes and retry.", 429
+        )
+    raise ZohoError(
+        f"Zoho API error {resp.status_code}: {resp.text[:300]}", resp.status_code
+    )
 
 
 def normalize_bug(raw: dict) -> dict:

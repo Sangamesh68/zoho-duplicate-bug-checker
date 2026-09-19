@@ -15,7 +15,7 @@ def get_credentials(user_id: str) -> dict:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT access_token, portal_id, project_id
+            SELECT access_token, refresh_token, portal_id, project_id
             FROM zoho_credentials
             WHERE user_id = %s
             """,
@@ -27,6 +27,32 @@ def get_credentials(user_id: str) -> dict:
             f"No Zoho credentials for user {user_id}. Run seed.py first."
         )
     return row
+
+
+def refresh_credentials(user_id: str, refresh_token: str) -> str:
+    """
+    Get a new access token and store it, returning the new token.
+
+    Access tokens last an hour; refresh tokens don't expire. Doing this
+    on demand is what keeps the tool usable day to day without going back
+    to the API console for a new grant code.
+    """
+    payload = zoho.refresh_access_token(refresh_token)
+    access_token = payload["access_token"]
+    expires_in = int(payload.get("expires_in") or 3600)
+
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE zoho_credentials
+               SET access_token = %s,
+                   expires_at   = now() + make_interval(secs => %s),
+                   updated_at   = now()
+             WHERE user_id = %s
+            """,
+            (access_token, expires_in, user_id),
+        )
+    return access_token
 
 
 def sync_user_bugs(user_id: str) -> dict:
@@ -45,9 +71,20 @@ def sync_user_bugs(user_id: str) -> dict:
         run_id = cur.fetchone()["id"]
 
     try:
-        raw_bugs = zoho.fetch_all_bugs(
-            creds["access_token"], creds["portal_id"], creds["project_id"]
-        )
+        try:
+            raw_bugs = zoho.fetch_all_bugs(
+                creds["access_token"], creds["portal_id"], creds["project_id"]
+            )
+        except zoho.ZohoError as exc:
+            # Access tokens last an hour. Rather than failing and sending the
+            # user back to the API console, swap in a fresh one and retry once.
+            if exc.status_code != 401 or not creds.get("refresh_token"):
+                raise
+            access_token = refresh_credentials(user_id, creds["refresh_token"])
+            raw_bugs = zoho.fetch_all_bugs(
+                access_token, creds["portal_id"], creds["project_id"]
+            )
+
         normalized = [zoho.normalize_bug(b) for b in raw_bugs]
 
         # Embed titles+descriptions in one batch (fast).
