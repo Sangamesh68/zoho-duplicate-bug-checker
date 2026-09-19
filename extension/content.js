@@ -15,6 +15,22 @@
   const DEBOUNCE_MS = 700;
   const MIN_CHARS = 8;
 
+  // Always announce ourselves, so "is the script even running?" is answerable
+  // from the console instead of guesswork.
+  const log = (...args) => console.log("[dup-checker]", ...args);
+  log("loaded in", window.top === window ? "top frame" : "iframe", location.href);
+
+  // The script runs in every frame (the bug form is sometimes iframed), but
+  // one panel is enough: skip tiny frames that can't be the form.
+  if (window.top !== window && (innerWidth < 300 || innerHeight < 200)) {
+    log("frame too small for a panel — skipping");
+    return;
+  }
+  if (document.getElementById("dbc-panel")) {
+    log("panel already present in this frame");
+    return;
+  }
+
   // Search boxes and filters are text inputs too — don't treat them as titles.
   const TITLE_HINT = /(bug|issue)?\s*(title|summary|subject|name)/i;
   const NOT_TITLE_HINT = /(search|filter|comment|tag|url|link|email)/i;
@@ -99,6 +115,28 @@
     }
     return null;
   }
+
+  /**
+   * Dump every visible text field so a failed match can be diagnosed without
+   * guessing at Zoho's markup. Call dbcFields() from the console.
+   */
+  window.dbcFields = () => {
+    const rows = [];
+    for (const el of document.querySelectorAll("input, textarea")) {
+      if (!isVisible(el)) continue;
+      rows.push({
+        tag: el.tagName.toLowerCase(),
+        type: el.getAttribute("type") || "",
+        id: el.id || "",
+        name: el.getAttribute("name") || "",
+        placeholder: el.getAttribute("placeholder") || "",
+        ariaLabel: el.getAttribute("aria-label") || "",
+        matched: TITLE_HINT.test(fieldHints(el)) && !NOT_TITLE_HINT.test(fieldHints(el)),
+      });
+    }
+    console.table(rows);
+    return rows;
+  };
 
   // ---- backend calls -------------------------------------------------------
 

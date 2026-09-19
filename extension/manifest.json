@@ -1,19 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Duplicate Bug Checker for Zoho Projects",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Warns you about likely-duplicate bugs while you file one in Zoho Projects.",
   "content_scripts": [
     {
       "matches": [
-        "https://projects.zoho.in/*",
-        "https://projects.zoho.com/*",
-        "https://projects.zoho.eu/*",
-        "https://projects.zoho.com.au/*"
+        "https://*.zoho.in/*",
+        "https://*.zoho.com/*",
+        "https://*.zoho.eu/*",
+        "https://*.zoho.com.au/*",
+        "https://*.zoho.jp/*",
+        "https://*.zoho.sa/*",
+        "https://*.zoho.ca/*",
+        "https://*.zohoprojects.com/*"
       ],
       "js": ["content.js"],
       "css": ["panel.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "host_permissions": ["http://localhost:8000/*"]

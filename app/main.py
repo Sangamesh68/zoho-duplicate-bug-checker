@@ -33,12 +33,11 @@ app = FastAPI(title="Duplicate Bug Checker")
 # page you visit could otherwise call it.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://projects.zoho.in",
-        "https://projects.zoho.com",
-        "https://projects.zoho.eu",
-        "https://projects.zoho.com.au",
-    ],
+    # Zoho serves Projects from several regional domains, and the extension may
+    # run in an iframe on a different subdomain, so match the family rather
+    # than listing hosts. Still scoped to Zoho — never "*", since this server
+    # answers on localhost and holds your Zoho tokens.
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*zoho(projects)?\.(in|com|eu|com\.au|jp|sa|ca)$",
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
