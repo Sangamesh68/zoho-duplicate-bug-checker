@@ -136,6 +136,32 @@ Open **http://localhost:8000**.
 2. Type a bug title/description and click **Check for duplicates**.
 3. You'll see the closest existing bugs with a match % and a verdict.
 
+## Step 9 — Use it inside Zoho Projects
+
+The `extension/` folder puts the checker directly on Zoho's pages, so you don't
+switch tabs while filing a bug.
+
+1. Leave the backend running (`uvicorn app.main:app`) — the extension talks to
+   `http://localhost:8000`.
+2. Open `chrome://extensions`, turn on **Developer mode** (top right).
+3. Click **Load unpacked** and pick the `extension/` folder.
+4. Open Zoho Projects and start filing a bug.
+
+A panel docks bottom-right. As you type the title it checks after a short pause
+and lists the closest existing bugs with a match %, each linking to the bug in
+Zoho. The dot in its header is the backend's status; **Sync** re-pulls bugs from
+Zoho. Click the header to collapse it.
+
+> **Zoho's DOM is not a public API.** The extension finds the title field by
+> matching labels and placeholders, so a Zoho UI change can break detection.
+> When that happens the panel says so and gives you a box to paste the title
+> into, so it degrades instead of dying. Fix detection in `TITLE_HINT` /
+> `findTitleField()` in `extension/content.js`.
+
+> **CORS is deliberately narrow.** `app/main.py` allows only Zoho Projects
+> origins. This server holds your Zoho tokens on localhost, so `allow_origins=["*"]`
+> would let any page you visit read your bug data — don't widen it.
+
 ---
 
 ## How the detection works
@@ -161,7 +187,11 @@ duplicate-bug-checker/
 ├── get_token.py          # grant code -> access token, written to .env
 ├── discover_ids.py       # find portal/project IDs
 ├── seed.py               # create the local user (local stand-in for OAuth)
-├── static/index.html     # test UI (no Chrome extension needed yet)
+├── extension/            # Chrome extension: the panel inside Zoho Projects
+│   ├── manifest.json
+│   ├── content.js        # finds the title field, calls the backend
+│   └── panel.css
+├── static/index.html     # standalone test UI (works without the extension)
 └── app/
     ├── config.py         # settings from .env
     ├── db.py             # connection pool + pgvector

@@ -100,10 +100,11 @@ def sync_user_bugs(user_id: str) -> dict:
                     cur.execute(
                         """
                         INSERT INTO bugs (user_id, zoho_project_id, zoho_issue_id,
-                                          title, description, status, severity,
-                                          embedding, synced_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+                                          zoho_issue_key, title, description,
+                                          status, severity, embedding, synced_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                         ON CONFLICT (user_id, zoho_issue_id) DO UPDATE SET
+                            zoho_issue_key = EXCLUDED.zoho_issue_key,
                             title = EXCLUDED.title,
                             description = EXCLUDED.description,
                             status = EXCLUDED.status,
@@ -115,6 +116,7 @@ def sync_user_bugs(user_id: str) -> dict:
                             user_id,
                             creds["project_id"],
                             bug["zoho_issue_id"],
+                            bug["zoho_issue_key"],
                             bug["title"],
                             bug["description"],
                             bug["status"],

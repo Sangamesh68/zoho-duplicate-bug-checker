@@ -28,6 +28,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS zoho_user_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS zoho_portal_user_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_zoho_user_id
     ON users(zoho_user_id);
+ALTER TABLE bugs ADD COLUMN IF NOT EXISTS zoho_issue_key TEXT;
 
 -- Each tester's Zoho connection (one row per user) --------------------------
 -- This table is where "local Self Client" vs "hosted OAuth" actually differs.
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS bugs (
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     zoho_project_id TEXT NOT NULL,
     zoho_issue_id   TEXT NOT NULL,   -- the id Zoho assigns the bug
+    zoho_issue_key  TEXT,            -- human key shown in the UI, e.g. DB1-I10
     title           TEXT NOT NULL,
     description     TEXT,
     status          TEXT,

@@ -1,0 +1,170 @@
+/* Namespaced under #dbc-panel so nothing here can leak into Zoho's own UI. */
+
+#dbc-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483647; /* above Zoho's modals */
+  width: 340px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #1f2933;
+  background: #fff;
+  border: 1px solid #d5dbe1;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.18);
+}
+
+#dbc-panel.dbc-collapsed .dbc-body {
+  display: none;
+}
+
+.dbc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf1f4;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dbc-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #52606d;
+}
+
+.dbc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd2d9; /* unknown until the first call */
+  flex: none;
+}
+.dbc-dot.ok { background: #2f9e6f; }
+.dbc-dot.bad { background: #d64545; }
+
+.dbc-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 9px;
+  border: 1px solid #d5dbe1;
+  border-radius: 5px;
+  background: #f7f9fa;
+  color: #3e4c59;
+  cursor: pointer;
+}
+.dbc-btn:hover { background: #eef2f5; }
+.dbc-btn:disabled { opacity: 0.55; cursor: default; }
+
+.dbc-body {
+  padding: 10px 12px 12px;
+  overflow-y: auto;
+}
+
+.dbc-status {
+  font-size: 12px;
+  color: #7b8794;
+  margin-bottom: 8px;
+}
+.dbc-status.dbc-warn { color: #b44a19; }
+
+/* Banner reflecting the overall verdict. */
+.dbc-verdict {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.dbc-verdict.dup { background: #fdecea; color: #a12a2a; }
+.dbc-verdict.clear { background: #e8f5ee; color: #1f6f4a; }
+
+.dbc-match {
+  padding: 8px 0;
+  border-top: 1px solid #f0f3f5;
+}
+.dbc-match:first-of-type { border-top: 0; }
+
+.dbc-match-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.dbc-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 12px;
+  flex: none;
+}
+.dbc-score.likely { color: #a12a2a; }
+.dbc-score.possible { color: #b06f12; }
+.dbc-score.different { color: #7b8794; }
+
+.dbc-key {
+  font-size: 11px;
+  color: #7b8794;
+  flex: none;
+}
+
+.dbc-match-title {
+  margin: 2px 0 0;
+  color: #1f2933;
+  text-decoration: none;
+  display: block;
+}
+.dbc-match-title:hover { text-decoration: underline; }
+
+.dbc-meta {
+  font-size: 11px;
+  color: #7b8794;
+  margin-top: 2px;
+}
+
+/* Score bar: semantic portion filled, rest of the track empty. */
+.dbc-bar {
+  height: 3px;
+  background: #eef2f5;
+  border-radius: 2px;
+  margin-top: 5px;
+  overflow: hidden;
+}
+.dbc-bar span {
+  display: block;
+  height: 100%;
+  background: #9aa5b1;
+}
+.dbc-bar span.likely { background: #d64545; }
+.dbc-bar span.possible { background: #e0a030; }
+
+.dbc-empty {
+  color: #7b8794;
+  font-style: italic;
+}
+
+@media (prefers-color-scheme: dark) {
+  #dbc-panel {
+    color: #e4e7eb;
+    background: #1f2933;
+    border-color: #3e4c59;
+  }
+  .dbc-head { border-bottom-color: #323f4b; }
+  .dbc-title, .dbc-status, .dbc-meta, .dbc-key { color: #9aa5b1; }
+  .dbc-btn {
+    background: #323f4b;
+    border-color: #3e4c59;
+    color: #e4e7eb;
+  }
+  .dbc-btn:hover { background: #3e4c59; }
+  .dbc-match { border-top-color: #323f4b; }
+  .dbc-match-title { color: #e4e7eb; }
+  .dbc-bar { background: #323f4b; }
+  .dbc-verdict.dup { background: #4a2020; color: #ffb4b4; }
+  .dbc-verdict.clear { background: #1d3a2b; color: #9fe0bd; }
+}

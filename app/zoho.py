@@ -255,6 +255,8 @@ def normalize_bug(raw: dict) -> dict:
 
     return {
         "zoho_issue_id": str(pick("id_string", "id", "key")),
+        # The key ("DB1-I10") is what testers recognise in the Zoho UI.
+        "zoho_issue_key": pick("key"),
         "title": pick("title", "name", "bug_title", default="(no title)"),
         "description": pick("description", "content", default=""),
         "status": name_of(pick("status", "classification")),

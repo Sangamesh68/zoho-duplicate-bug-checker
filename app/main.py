@@ -15,6 +15,7 @@ is the ONE function you change — it will read the user from the login session
 instead. Nothing else in the app needs to move.
 """
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -25,6 +26,22 @@ from app.sync import sync_user_bugs
 from app.zoho import ZohoError
 
 app = FastAPI(title="Duplicate Bug Checker")
+
+# The browser extension runs on Zoho's own pages, so its fetch() calls to this
+# server are cross-origin and blocked without this. Listed explicitly rather
+# than "*" — this server holds Zoho tokens and answers on localhost, so any
+# page you visit could otherwise call it.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://projects.zoho.in",
+        "https://projects.zoho.com",
+        "https://projects.zoho.eu",
+        "https://projects.zoho.com.au",
+    ],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 def get_current_user_id() -> str:

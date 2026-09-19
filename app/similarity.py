@@ -38,6 +38,8 @@ def find_duplicates(
             """
             SELECT
                 zoho_issue_id,
+                zoho_issue_key,
+                zoho_project_id,
                 title,
                 description,
                 status,
@@ -92,6 +94,9 @@ def find_duplicates(
         matches.append(
             {
                 "zoho_issue_id": c["zoho_issue_id"],
+                # The browser extension builds a Zoho UI link from these two.
+                "zoho_issue_key": c["zoho_issue_key"],
+                "zoho_project_id": c["zoho_project_id"],
                 "title": c["title"],
                 "status": c["status"],
                 "severity": c["severity"],
