@@ -1,6 +1,12 @@
 /* Namespaced under #dbc-panel so nothing here can leak into Zoho's own UI. */
 
+/* Hidden until the user actually starts filing a bug; .dbc-visible is added
+   on the first keystroke in the title and removed when the form closes. */
 #dbc-panel {
+  display: none;
+}
+
+#dbc-panel.dbc-visible {
   position: fixed;
   right: 20px;
   bottom: 20px;
@@ -19,6 +25,18 @@
 
 #dbc-panel.dbc-collapsed .dbc-body {
   display: none;
+}
+
+/* Fade in so it doesn't snap into view mid-sentence. */
+#dbc-panel.dbc-visible {
+  animation: dbc-in 140ms ease-out;
+}
+@keyframes dbc-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #dbc-panel.dbc-visible { animation: none; }
 }
 
 .dbc-head {

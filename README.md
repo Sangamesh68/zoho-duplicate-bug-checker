@@ -147,10 +147,19 @@ switch tabs while filing a bug.
 3. Click **Load unpacked** and pick the `extension/` folder.
 4. Open Zoho Projects and start filing a bug.
 
-A panel docks bottom-right. As you type the title it checks after a short pause
-and lists the closest existing bugs with a match %, each linking to the bug in
-Zoho. The dot in its header is the backend's status; **Sync** re-pulls bugs from
-Zoho. Click the header to collapse it.
+The panel is tied to the bug form, not to the page:
+
+- **hidden** until you start typing a bug title
+- **appears** on the first keystroke, and stays through the description
+- **disappears** when the form closes — cancelled, saved, or navigated away
+
+While open it lists the closest existing bugs with a match %, each linking to
+the bug in Zoho. The dot in its header is the backend's status; **Sync** re-pulls
+bugs from Zoho. Click the header to collapse without closing.
+
+> If the title field isn't detected, the panel stays hidden rather than
+> cluttering the page. Run `dbcShow()` in the browser console (F12) to force it
+> up with a paste box, then report the field so detection can be fixed.
 
 > **Zoho's DOM is not a public API.** The extension finds the title field by
 > matching labels and placeholders, so a Zoho UI change can break detection.

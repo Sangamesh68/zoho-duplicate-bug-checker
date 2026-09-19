@@ -82,6 +82,34 @@
     dotEl.title = ok ? "backend reachable" : "backend unreachable";
   }
 
+  // ---- show / hide ---------------------------------------------------------
+  // The panel belongs to the bug form: it appears once the user starts typing
+  // a title and goes away when the form does (cancelled, saved, navigated off).
+
+  function showPanel() {
+    if (panel.classList.contains("dbc-visible")) return;
+    panel.classList.add("dbc-visible");
+    panel.classList.remove("dbc-collapsed");
+    log("panel shown");
+  }
+
+  function hidePanel(reason) {
+    if (!panel.classList.contains("dbc-visible")) return;
+    panel.classList.remove("dbc-visible");
+    // Reset so the next bug starts clean rather than showing stale matches.
+    resultsEl.textContent = "";
+    lastQuery = "";
+    clearTimeout(debounceTimer);
+    log("panel hidden:", reason);
+  }
+
+  /** Console escape hatch when field detection fails — see the README. */
+  window.dbcShow = () => {
+    showPanel();
+    showManualInput();
+    setStatus("Manual mode — paste a bug title below.");
+  };
+
   // ---- finding the title field --------------------------------------------
 
   function isVisible(el) {
@@ -282,6 +310,21 @@
   function onInput(event) {
     clearTimeout(debounceTimer);
     const value = event.target.value;
+
+    // First keystroke in the title is what brings the panel up. It then stays
+    // for the rest of the form, including while the description is written.
+    if (value.trim().length > 0) {
+      showPanel();
+    }
+
+    if (!value.trim()) {
+      resultsEl.textContent = "";
+      lastQuery = "";
+      setStatus("Waiting for a title…");
+      return;
+    }
+
+    setStatus("Typing…");
     debounceTimer = setTimeout(() => check(value), DEBOUNCE_MS);
   }
 
@@ -290,8 +333,14 @@
     if (watchedField) watchedField.removeEventListener("input", onInput);
     watchedField = field;
     field.addEventListener("input", onInput);
-    setStatus("Watching the title field — start typing.");
-    if (field.value) check(field.value);
+    log("watching title field", field.id || field.name || field.placeholder || "(unnamed)");
+
+    // Reopening a form that already has a title (an edit, or a restored draft)
+    // should show results straight away rather than waiting for a keystroke.
+    if (field.value && field.value.trim()) {
+      showPanel();
+      check(field.value);
+    }
   }
 
   /** Manual fallback: the panel gets its own input when detection fails. */
@@ -311,19 +360,39 @@
   // Zoho is a single-page app: the bug form appears and disappears without a
   // page load, so re-scan rather than binding once at startup.
   function scan() {
+    // Cancel / save / navigate away all look the same from here — the title
+    // field is gone from the DOM, or is still attached but no longer shown.
+    if (watchedField && (!document.contains(watchedField) || !isVisible(watchedField))) {
+      watchedField.removeEventListener("input", onInput);
+      watchedField = null;
+      hidePanel("bug form closed");
+    }
+
     const field = findTitleField();
     if (field) {
       attach(field);
     } else if (!watchedField) {
-      setStatus("No bug title field detected — type below instead.", true);
-      showManualInput();
-    } else if (!document.contains(watchedField)) {
-      watchedField = null; // form closed; next scan re-attaches or falls back
+      // Nothing to watch. Stay out of the way — the panel is only ever shown
+      // while a bug is being filed. dbcShow() forces it up if detection fails.
+      hidePanel("no bug form on screen");
     }
   }
 
   scan();
-  setInterval(scan, 2000);
+  setInterval(scan, 800);
+
+  // Poll alone can lag a cancel by up to a second; react to DOM changes too so
+  // the panel vanishes with the form rather than lingering after it. Throttled
+  // because scan() walks every input and Zoho mutates the DOM constantly.
+  let scanQueued = false;
+  new MutationObserver(() => {
+    if (scanQueued) return;
+    scanQueued = true;
+    setTimeout(() => {
+      scanQueued = false;
+      scan();
+    }, 150);
+  }).observe(document.body, { childList: true, subtree: true });
 
   // Confirm the backend is up before the user types anything.
   fetch(`${API}/api/health`)
