@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.config import settings
 from app.db import get_conn
 from app.similarity import find_duplicates
 from app.sync import sync_user_bugs
@@ -76,6 +77,41 @@ def health():
         return {"status": "ok", "database": "connected"}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database down: {exc}")
+
+
+@app.get("/api/sync/status")
+def sync_status():
+    """
+    When did this user's bugs last sync, and is that stale?
+
+    The extension calls this as the New Issues form opens and triggers a sync
+    when `stale` is true, so checks run against current data without the user
+    having to remember the Sync button.
+    """
+    user_id = get_current_user_id()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT finished_at,
+                   EXTRACT(EPOCH FROM (now() - finished_at)) AS age_seconds
+              FROM sync_runs
+             WHERE user_id = %s AND status = 'success'
+             ORDER BY finished_at DESC
+             LIMIT 1
+            """,
+            (user_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return {"last_sync": None, "age_seconds": None, "stale": True}
+
+    age = int(row["age_seconds"])
+    return {
+        "last_sync": row["finished_at"].isoformat(),
+        "age_seconds": age,
+        "stale": age > settings.sync_stale_minutes * 60,
+    }
 
 
 @app.post("/api/sync")

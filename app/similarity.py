@@ -7,9 +7,11 @@ It combines two signals:
   2. KEYWORD   — does it use the same WORDS?
                  (Postgres full-text ts_rank_cd — the "BM25-style" half)
 
-We retrieve the semantically-closest candidates for THIS user, then blend the
-two scores. Every query is scoped by user_id, so a tester only ever matches
-against their own bugs.
+We retrieve the semantically-closest candidates for THIS user, blend the two
+scores, then (by default) hand the shortlist to a cross-encoder reranker —
+see app/rerank.py — which reads each pair together and is much better at
+heavy paraphrase. Every query is scoped by user_id, so a tester only ever
+matches against their own bugs.
 
 Note: ts_rank_cd is Postgres's built-in text ranking, not literally BM25. It
 plays the same role well here; if you later want true BM25 you can swap this
@@ -18,6 +20,7 @@ one query without touching anything else.
 from app.db import get_conn
 from app.embeddings import embed
 from app.config import settings
+from app.rerank import rerank_scores
 
 
 def find_duplicates(
@@ -80,17 +83,40 @@ def find_duplicates(
     # the threshold unreachable.
     keyword_signal = max_kw > 0
 
+    # Second stage: the cross-encoder judges each (query, candidate) pair
+    # directly. Only ~20 pairs, so it's cheap here even though it would be far
+    # too slow to run across every stored bug.
+    rerank = None
+    if settings.rerank_enabled:
+        candidate_texts = [
+            f"{c['title']} {c['description'] or ''}".strip() for c in candidates
+        ]
+        rerank = rerank_scores(query_text, candidate_texts)
+
     matches = []
-    for c in candidates:
+    for i, c in enumerate(candidates):
         semantic = float(c["semantic_score"] or 0.0)
         keyword = float(c["keyword_score"] or 0.0) / max_kw if keyword_signal else 0.0
         if keyword_signal:
-            final = (
+            first_stage = (
                 settings.semantic_weight * semantic
                 + settings.keyword_weight * keyword
             )
         else:
-            final = semantic
+            first_stage = semantic
+
+        # The reranker gets most of the say, but the first-stage score keeps
+        # a vote so an exact-keyword hit (an error code, say) still counts.
+        if rerank is not None:
+            rerank_score = rerank[i]
+            final = (
+                settings.rerank_weight * rerank_score
+                + (1 - settings.rerank_weight) * first_stage
+            )
+        else:
+            rerank_score = None
+            final = first_stage
+
         matches.append(
             {
                 "zoho_issue_id": c["zoho_issue_id"],
@@ -102,6 +128,7 @@ def find_duplicates(
                 "severity": c["severity"],
                 "semantic_score": round(semantic, 3),
                 "keyword_score": round(keyword, 3),
+                "rerank_score": round(rerank_score, 3) if rerank_score is not None else None,
                 "final_score": round(final, 3),
                 "verdict": _verdict(final, semantic),
             }

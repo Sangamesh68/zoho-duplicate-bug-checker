@@ -154,8 +154,20 @@ The panel is tied to the bug form, not to the page:
 - **disappears** when the form closes — cancelled, saved, or navigated away
 
 While open it lists the closest existing bugs with a match %, each linking to
-the bug in Zoho. The dot in its header is the backend's status; **Sync** re-pulls
-bugs from Zoho. Click the header to collapse without closing.
+the bug in Zoho. The dot in its header is the backend's status. Click the
+header to collapse without closing.
+
+Three things happen without you asking:
+
+- **Auto-sync.** When the form opens, the panel asks the backend how old the
+  last sync is. Older than `SYNC_STALE_MINUTES` (default 10) and it re-pulls
+  from Zoho first, so a bug a teammate filed an hour ago is already in the
+  comparison. The **Sync** button is still there for forcing it.
+- **Description is included.** Once you start typing in the description
+  editor, it's sent along with the title. Descriptions often hold the detail
+  that titles lack — an error code, a screen name — so the match improves as
+  you write. The status line says `+ description` when it's in play.
+- **Reranking.** See *How the detection works* below.
 
 > If the title field isn't detected, the panel stays hidden rather than
 > cluttering the page. Run `dbcShow()` in the browser console (F12) to force it
@@ -215,9 +227,27 @@ closest bugs by meaning, each with two scores:
 - **semantic** — cosine similarity of AI embeddings (same meaning, any words)
 - **keyword** — Postgres `ts_rank_cd` full-text score (shared words)
 
-They're blended (`SEMANTIC_WEIGHT` / `KEYWORD_WEIGHT` in `.env`) into a final
-score. Above `DUPLICATE_THRESHOLD` it's flagged. Tune those three numbers if it
-feels too strict or too loose.
+They're blended (`SEMANTIC_WEIGHT` / `KEYWORD_WEIGHT` in `.env`) into a
+first-stage score. If no candidate shares any keyword — the normal case for a
+reworded duplicate — the blend uses the semantic score alone, otherwise the
+threshold could never be reached.
+
+Then a **cross-encoder reranker** (`app/rerank.py`) reads each
+(new bug, candidate) pair *together* and scores how alike they are, 0..1. It's
+far better at paraphrase than comparing two independent vectors, but too slow
+to run over every bug — so it only judges the 20 candidates the vector search
+already found. `RERANK_WEIGHT` (default 0.7) says how much of the final score
+it gets; the first stage keeps the rest so an exact-keyword hit still counts.
+
+Above `DUPLICATE_THRESHOLD` it's flagged. `RERANK_ENABLED=false` in `.env`
+turns the second stage off (faster, and skips a ~330 MB download).
+
+**Honest limits.** On the ten test bugs, the reranker sharpened the
+separation between real duplicates and unrelated bugs, but a heavily reworded
+pair — "vacation days go into the minus" vs "leave balance shows negative" —
+still scores low with every small model tried. Domain vocabulary like
+*leave* = *vacation* is beyond them. Writing descriptions helps far more than
+tuning weights, because the distinctive detail usually lives there.
 
 ## Project layout
 

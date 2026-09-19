@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     semantic_weight: float = 0.65
     keyword_weight: float = 0.35
 
+    # Second-stage reranking of the top candidates (see app/rerank.py).
+    # Off = the original embedding+keyword blend only.
+    rerank_enabled: bool = True
+    # STS-B ("how similar in meaning are these two sentences", 0..1). The
+    # Quora duplicate-question model was tried first and scored even obvious
+    # duplicates near 0 — it expects question phrasing, which bug titles lack.
+    rerank_model: str = "cross-encoder/stsb-distilroberta-base"
+    # How much the reranker's verdict counts vs the first-stage score.
+    rerank_weight: float = 0.7
+
+    # Auto-sync: the extension re-pulls from Zoho when the last successful
+    # sync is older than this, so checks run against fresh data.
+    sync_stale_minutes: int = 10
+
 
 # One shared instance imported everywhere: `from app.config import settings`
 settings = Settings()

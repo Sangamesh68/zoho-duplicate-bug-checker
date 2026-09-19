@@ -200,32 +200,57 @@
 
   // ---- backend calls -------------------------------------------------------
 
-  async function checkDuplicate(title) {
+  async function checkDuplicate(title, description) {
     const resp = await fetch(`${API}/api/check-duplicate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description: "" }),
+      body: JSON.stringify({ title, description }),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
   }
 
-  async function runSync() {
+  async function runSync(auto = false) {
     const btn = panel.querySelector("[data-dbc=sync]");
     btn.disabled = true;
-    setStatus("Syncing bugs from Zoho…");
+    setStatus(auto ? "Bugs are stale — syncing from Zoho…" : "Syncing bugs from Zoho…");
     try {
       const resp = await fetch(`${API}/api/sync`, { method: "POST" });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
       setHealth(true);
-      setStatus(`Synced ${data.synced} bugs.`);
-      lastQuery = ""; // force a re-check against the refreshed set
+      setStatus(`${auto ? "Auto-synced" : "Synced"} ${data.synced} bugs.`);
+      // Whatever is already typed should be re-judged against the fresh set.
+      lastQuery = "";
+      check();
     } catch (err) {
       setHealth(false);
       setStatus(`Sync failed: ${err.message}`, true);
     } finally {
       btn.disabled = false;
+    }
+  }
+
+  /**
+   * Called as the form opens. If the last successful sync is older than the
+   * backend's staleness window, sync now — so the check runs against bugs a
+   * teammate filed an hour ago, not against whenever Sync was last clicked.
+   */
+  async function ensureFresh() {
+    try {
+      const resp = await fetch(`${API}/api/sync/status`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const status = await resp.json();
+      setHealth(true);
+      if (status.stale) {
+        await runSync(true);
+      } else {
+        const mins = Math.max(1, Math.round(status.age_seconds / 60));
+        setStatus(`Bugs synced ${mins} min ago. Waiting for a title…`);
+      }
+    } catch (err) {
+      setHealth(false);
+      setStatus(`Backend unreachable (${err.message}). Is it running on ${API}?`, true);
     }
   }
 
@@ -318,16 +343,76 @@
 
   // ---- the check loop ------------------------------------------------------
 
-  async function check(title) {
-    const trimmed = title.trim();
-    if (trimmed.length < MIN_CHARS || trimmed === lastQuery) return;
-    lastQuery = trimmed;
+  // ---- description field ---------------------------------------------------
+  // Zoho's description is a rich-text editor (contenteditable), not an input.
+  // It often carries the distinctive detail a title lacks — an error code, a
+  // screen name — so it goes into the check too. Best effort: if it can't be
+  // found the check runs on the title alone.
+
+  let descriptionField = null;
+
+  function findDescriptionField(titleField) {
+    // Same container walk as isInCreateForm: the editor lives in the form.
+    let node = titleField.parentElement;
+    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+      const editors = node.querySelectorAll('[contenteditable="true"], textarea');
+      for (const el of editors) {
+        if (el === titleField || el.closest("#dbc-panel") || !isVisible(el)) continue;
+        return el;
+      }
+    }
+    return null;
+  }
+
+  function descriptionText() {
+    if (!descriptionField || !document.contains(descriptionField)) return "";
+    const raw =
+      descriptionField.tagName === "TEXTAREA"
+        ? descriptionField.value
+        : descriptionField.innerText || "";
+    // Cap it: the embedding model truncates long input anyway, and a pasted
+    // stack trace shouldn't be sent in full on every keystroke.
+    return raw.trim().slice(0, 2000);
+  }
+
+  function onDescriptionInput() {
+    clearTimeout(debounceTimer);
+    setStatus("Typing…");
+    debounceTimer = setTimeout(() => check(), DEBOUNCE_MS);
+  }
+
+  function attachDescription(titleField) {
+    const field = findDescriptionField(titleField);
+    if (!field || field === descriptionField) return;
+    if (descriptionField) descriptionField.removeEventListener("input", onDescriptionInput);
+    descriptionField = field;
+    field.addEventListener("input", onDescriptionInput);
+    log("watching description field", field.tagName.toLowerCase());
+  }
+
+  function detachDescription() {
+    if (descriptionField) descriptionField.removeEventListener("input", onDescriptionInput);
+    descriptionField = null;
+  }
+
+  // ---- the check loop ------------------------------------------------------
+
+  async function check(titleOverride) {
+    const source = titleOverride !== undefined ? titleOverride : watchedField ? watchedField.value : "";
+    const trimmed = (source || "").trim();
+    if (trimmed.length < MIN_CHARS) return;
+
+    const description = descriptionText();
+    const key = `${trimmed}\n${description}`;
+    if (key === lastQuery) return;
+    lastQuery = key;
 
     setStatus("Checking…");
     try {
-      const result = await checkDuplicate(trimmed);
+      const result = await checkDuplicate(trimmed, description);
       setHealth(true);
-      setStatus(`Checked: "${trimmed.slice(0, 40)}${trimmed.length > 40 ? "…" : ""}"`);
+      const withDesc = description ? " + description" : "";
+      setStatus(`Checked: "${trimmed.slice(0, 40)}${trimmed.length > 40 ? "…" : ""}"${withDesc}`);
       render(result);
     } catch (err) {
       setHealth(false);
@@ -370,12 +455,14 @@
     // The form being open is what makes the panel relevant, so show it now
     // rather than waiting for a keystroke — it is part of the create window.
     showPanel();
+    attachDescription(field);
+    setStatus("Waiting for a title…");
 
-    if (field.value && field.value.trim()) {
-      check(field.value); // reopened form or restored draft
-    } else {
-      setStatus("Waiting for a title…");
-    }
+    // Refresh the bug set if it's stale, then judge anything already typed
+    // (a reopened form or restored draft) against it.
+    ensureFresh().then(() => {
+      if (field.value && field.value.trim()) check(field.value);
+    });
   }
 
   /** Manual fallback: the panel gets its own input when detection fails. */
@@ -400,12 +487,15 @@
     if (watchedField && (!document.contains(watchedField) || !isVisible(watchedField))) {
       watchedField.removeEventListener("input", onInput);
       watchedField = null;
+      detachDescription();
       hidePanel("bug form closed");
     }
 
     const field = findTitleField();
     if (field) {
       attach(field);
+      // The rich-text editor can render a beat after the title input does.
+      if (!descriptionField) attachDescription(field);
     } else if (!watchedField) {
       // Nothing to watch. Stay out of the way — the panel is only ever shown
       // while a bug is being filed. dbcShow() forces it up if detection fails.
