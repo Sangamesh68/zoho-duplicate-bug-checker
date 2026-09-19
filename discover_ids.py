@@ -36,7 +36,7 @@ def main():
 
     for p in portals:
         pid = p.get("id_string") or p.get("id")
-        pname = p.get("name") or p.get("portal_name") or "(unnamed)"
+        pname = p.get("portal_name") or p.get("name") or p.get("org_name") or "(unnamed)"
         print(f"PORTAL  id={pid}  name={pname}")
         try:
             projects = zoho.list_projects(token, str(pid))

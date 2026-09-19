@@ -21,15 +21,31 @@ def _headers(access_token: str) -> dict:
     return {"Authorization": f"Zoho-oauthtoken {access_token}"}
 
 
+def _records(payload, *keys) -> list[dict]:
+    """
+    Pull the record list out of a v3 response.
+
+    v3 is inconsistent: /portals and /projects answer with a bare JSON array,
+    while /users and /bugs wrap the array in an object alongside page_info.
+    Handle both so callers don't have to care.
+    """
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
 def list_portals(access_token: str) -> list[dict]:
     """List the portals this token can see. Used to discover your portal_id."""
     url = f"{settings.zoho_api_base}/api/v3/portals"
     with httpx.Client(timeout=30) as client:
         resp = client.get(url, headers=_headers(access_token))
     _raise_for_status(resp)
-    data = resp.json()
-    # v3 returns the list under a module key; be defensive about the exact name.
-    return data.get("portals") or data.get("portal") or []
+    return _records(resp.json(), "portals", "portal")
 
 
 def list_projects(access_token: str, portal_id: str) -> list[dict]:
@@ -38,8 +54,7 @@ def list_projects(access_token: str, portal_id: str) -> list[dict]:
     with httpx.Client(timeout=30) as client:
         resp = client.get(url, headers=_headers(access_token))
     _raise_for_status(resp)
-    data = resp.json()
-    return data.get("projects") or []
+    return _records(resp.json(), "projects")
 
 
 def get_user_info(access_token: str) -> dict:
@@ -68,8 +83,7 @@ def list_portal_users(access_token: str, portal_id: str) -> list[dict]:
     with httpx.Client(timeout=30) as client:
         resp = client.get(url, headers=_headers(access_token))
     _raise_for_status(resp)
-    data = resp.json()
-    return data.get("users") or []
+    return _records(resp.json(), "users")
 
 
 def find_portal_user(access_token: str, portal_id: str, zuid: str, email: str) -> dict | None:
@@ -114,12 +128,16 @@ def fetch_all_bugs(access_token: str, portal_id: str, project_id: str) -> list[d
             _raise_for_status(resp)
             data = resp.json()
 
-            # v3 lists the records under the module key ("bugs").
-            batch = data.get("bugs", [])
+            batch = _records(data, "bugs")
             bugs.extend(batch)
 
-            page_info = data.get("page_info", {})
-            if not page_info.get("has_next_page"):
+            # Prefer the server's own flag, but fall back to a short page when
+            # the endpoint answers with a bare array and no page_info.
+            page_info = data.get("page_info", {}) if isinstance(data, dict) else {}
+            if page_info:
+                if not page_info.get("has_next_page"):
+                    break
+            elif len(batch) < per_page:
                 break
             page += 1
 
